@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: ai-image-detector-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    envVars:
+      - key: MONGO_URI
+        value: mongodb+srv://madhuraaaganesh_db_user:RaMYA@1982@cluster0.qzhfzew.mongodb.net/
+      - key: DB_NAME
+        value: ai_image_detector
+      - key: ALLOWED_ORIGINS
+        value: https://your-site.netlify.app
+    healthCheckPath: /health
+    autoDeploy: true
