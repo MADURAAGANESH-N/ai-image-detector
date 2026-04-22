@@ -12,12 +12,7 @@ from database import save_analysis, get_history, get_analysis_by_id, get_stats, 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:4321,http://localhost:3000,https://*.netlify.app,https://*.netlify.com"
-).split(",")
-
-MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
+MAX_FILE_SIZE = 15 * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp", "image/tiff"}
 
 
@@ -30,17 +25,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI Image Detector API",
-    description="Detect AI-generated or AI-modified images using ELA + ML analysis",
     version="1.0.0",
     lifespan=lifespan,
 )
 
+# ── CORS ──────────────────────────────────────────────────────────────────────
+# allow_credentials MUST be False when allow_origins=["*"]
+# otherwise browsers strip the CORS header entirely
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -61,29 +59,19 @@ async def health():
 
 @app.post("/api/analyze")
 async def analyze(file: UploadFile = File(...)):
-    """
-    Analyze an uploaded image for AI generation/modification.
-    Returns verdict, confidence, annotated image, and ELA heatmap.
-    """
-    # Validate content type
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {file.content_type}. Allowed: JPEG, PNG, WEBP, GIF, BMP, TIFF",
+            detail=f"Unsupported file type: {file.content_type}",
         )
 
-    # Read file bytes
     image_bytes = await file.read()
 
-    # Validate size
     if len(image_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)} MB",
-        )
+        raise HTTPException(status_code=413, detail="File too large. Max 15MB")
 
     if len(image_bytes) < 100:
-        raise HTTPException(status_code=400, detail="File appears to be empty or corrupted")
+        raise HTTPException(status_code=400, detail="File appears empty or corrupted")
 
     try:
         result = analyze_image(image_bytes, filename=file.filename or "upload.jpg")
@@ -93,7 +81,6 @@ async def analyze(file: UploadFile = File(...)):
         logger.error(f"Analysis error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal analysis error")
 
-    # Persist to MongoDB (non-blocking on failure)
     try:
         doc_id = await save_analysis(result)
         result["_id"] = doc_id
@@ -109,7 +96,6 @@ async def history(
     limit: int = Query(default=20, ge=1, le=100),
     skip: int = Query(default=0, ge=0),
 ):
-    """Get paginated analysis history."""
     try:
         docs = await get_history(limit=limit, skip=skip)
         return {"items": docs, "limit": limit, "skip": skip}
@@ -120,7 +106,6 @@ async def history(
 
 @app.get("/api/history/{analysis_id}")
 async def get_single(analysis_id: str):
-    """Get full analysis result by ID (includes images)."""
     doc = await get_analysis_by_id(analysis_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -129,7 +114,6 @@ async def get_single(analysis_id: str):
 
 @app.get("/api/stats")
 async def stats():
-    """Get aggregate detection statistics."""
     try:
         return await get_stats()
     except Exception as e:
@@ -139,7 +123,6 @@ async def stats():
 
 @app.delete("/api/history/{analysis_id}")
 async def delete(analysis_id: str):
-    """Delete an analysis record."""
     deleted = await delete_analysis(analysis_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Analysis not found")
