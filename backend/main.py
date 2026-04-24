@@ -34,7 +34,7 @@ app = FastAPI(
 # otherwise browsers strip the CORS header entirely
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://ai-image-authenticator.netlify.app"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
